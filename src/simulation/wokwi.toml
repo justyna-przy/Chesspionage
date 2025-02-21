@@ -1,0 +1,16 @@
+[wokwi]
+version = 1
+firmware = "build/esp32.esp32.esp32/simulation.ino.bin"
+elf = "build/esp32.esp32.esp32/simulation.ino.elf"
+
+[platform]
+type = "esp32"
+
+[build]
+board = "esp32dev"
+framework = "arduino"
+
+[simulator]
+board = "esp32"
+sketch = "simulation.ino"
+diagram = "src/simulation/diagram.json"
