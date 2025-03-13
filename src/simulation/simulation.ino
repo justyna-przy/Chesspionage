@@ -13,7 +13,7 @@ const int EN_PIN[4] = {17, 18, 19, 21};
 // --- LCD Pin Definitions ---
 // From your diagram: 
 // RS: ESP32 GPIO4, E: ESP32 GPIO16, D4: GPIO32, D5: GPIO33, D6: GPIO34, D7: GPIO35
-LiquidCrystal lcd(4, 16, 32, 33, 34, 35);
+LiquidCrystal lcd(4, 16, 32, 33, 13, 22);
 
 void setup() {
   Serial.begin(115200);
@@ -73,7 +73,7 @@ void loop() {
       Serial.print(ch);
       Serial.println(" is active (LED on).");
 
-      delay(500);  // Delay to allow time to view the message on the LCD
+      delay(10);  // Delay to allow time to view the message on the LCD
     }
   }
 }

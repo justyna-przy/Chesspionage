@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <LiquidCrystal.h>
+#include "customChessChars.h"  // Include your custom chess piece definitions
 
 // ----------------------
 // LCD Pin Definitions
@@ -28,8 +29,24 @@ LiquidCrystal lcd(LCD_RS, LCD_E, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
 #define MUX1_EN 22  // MUX 1 enable pin
 #define MUX2_EN 23  // MUX 2 enable pin
 
+const int buttonPin = 12;  // Using pin 12 for the button
+
+
 // ----------------------
-// Function to select the desired channel (0-15)
+// ADC and Sensor Conversion Constants
+// ----------------------
+// For ESP32 ADC (12-bit) with a 3.3V supply:
+const float SUPPLY_VOLTAGE = 3.3;     // volts
+const int ADC_MAX = 4095;             // 12-bit resolution
+const float ZERO_OFFSET_V = 1.65;     // zero field voltage (approx half of 3.3V)
+// Threshold (in volts) to decide if a magnet is present
+const float DETECTION_THRESHOLD = 0.1;  // adjust as needed
+
+// Number of samples for averaging (reduces noise)
+const int NUM_SAMPLES = 50;
+
+// ----------------------
+// Function to select the desired MUX channel (0-15)
 // ----------------------
 void selectMuxChannel(uint8_t channel) {
   digitalWrite(MUX_S0, channel & 0x01);
@@ -38,109 +55,109 @@ void selectMuxChannel(uint8_t channel) {
   digitalWrite(MUX_S3, (channel >> 3) & 0x01);
 }
 
+// Function to read a sensor on a given MUX and channel
+float readSensor(uint8_t muxEnablePin, uint8_t channel) {
+  long sum = 0;
+  digitalWrite(muxEnablePin, HIGH);
+  selectMuxChannel(channel);
+  delay(10);  // allow settling
+  for (int i = 0; i < NUM_SAMPLES; i++) {
+    sum += analogRead(MUX_SIG);
+    delay(5);
+  }
+  digitalWrite(muxEnablePin, LOW);
+  return (float)sum / NUM_SAMPLES;
+}
+
 void setup() {
   // Initialize LCD
   lcd.begin(16, 2);
   lcd.clear();
   lcd.print("Starting...");
-  
-  // Set MUX address lines as outputs
+
+  // Load custom chess piece characters into LCD CGRAM
+  lcd.createChar(0, knight);
+  lcd.createChar(1, rook);
+  lcd.createChar(2, bishop);
+  lcd.createChar(3, queen);
+
+  // Set MUX address pins as outputs
   pinMode(MUX_S0, OUTPUT);
   pinMode(MUX_S1, OUTPUT);
   pinMode(MUX_S2, OUTPUT);
   pinMode(MUX_S3, OUTPUT);
-  
+
   // Set MUX enable pins as outputs
   pinMode(MUX1_EN, OUTPUT);
   pinMode(MUX2_EN, OUTPUT);
-  
+
   // Initially disable both MUXes
   digitalWrite(MUX1_EN, LOW);
   digitalWrite(MUX2_EN, LOW);
-  
+
+  pinMode(buttonPin, INPUT_PULLUP);
+
   delay(1000);
 }
 
 void loop() {
-  int sensor1 = 0;
-  int sensor2 = 0;
-  
-  // --- Read from MUX 1, Channel 7 ---
-  // Enable MUX 1 and disable MUX 2
-  digitalWrite(MUX1_EN, HIGH);
-  digitalWrite(MUX2_EN, LOW);
-  
-  // Set channel 7 (binary 0111)
-  selectMuxChannel(7);
-  delay(10);  // allow signal to settle
-  sensor1 = analogRead(MUX_SIG);
-  
-  // Disable MUX 1 after reading
-  digitalWrite(MUX1_EN, LOW);
-  
-  // --- Read from MUX 2, Channel 11 ---
-  // Disable MUX 1 and enable MUX 2
-  digitalWrite(MUX1_EN, LOW);
-  digitalWrite(MUX2_EN, HIGH);
-  
-  // Set channel 11 (binary 1011)
-  selectMuxChannel(11);
-  delay(10);  // allow signal to settle
-  sensor2 = analogRead(MUX_SIG);
-  
-  // Disable MUX 2 after reading
-  digitalWrite(MUX2_EN, LOW);
-  
-  // --- Display the sensor readings on the LCD ---
+
+  if (digitalRead(buttonPin) == LOW) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Button Pressed!");
+    delay(1000);  // Display message for 1 second
+  }
+
+
+  // --- Read Sensor 1 from MUX1, Channel 7 ---
+  float adcAvg1 = readSensor(MUX1_EN, 7);
+  // --- Read Sensor 2 from MUX2, Channel 11 ---
+  float adcAvg2 = readSensor(MUX2_EN, 11);
+
+  // Convert averaged ADC values to voltage
+  float voltage1 = adcAvg1 * (SUPPLY_VOLTAGE / (ADC_MAX + 1.0));
+  float voltage2 = adcAvg2 * (SUPPLY_VOLTAGE / (ADC_MAX + 1.0));
+
+  // Determine if magnet is present and its polarity
+  // Polarity: voltage > ZERO_OFFSET_V => positive, voltage < ZERO_OFFSET_V => negative
+  bool magnet1Present = fabs(voltage1 - ZERO_OFFSET_V) > DETECTION_THRESHOLD;
+  bool magnet2Present = fabs(voltage2 - ZERO_OFFSET_V) > DETECTION_THRESHOLD;
+
+  String polarity1 = (voltage1 > ZERO_OFFSET_V) ? "Pos" : "Neg";
+  String polarity2 = (voltage2 > ZERO_OFFSET_V) ? "Pos" : "Neg";
+
+  // --- Display the sensor readings and detection info on the LCD ---
   lcd.clear();
-  
   lcd.setCursor(0, 0);
-  lcd.print("MUX1 C7: ");
-  lcd.print(sensor1);
-  
+  lcd.print("S1: ");
+  lcd.print(voltage1, 2);
+  if (magnet1Present) {
+    lcd.print(" ");
+    lcd.print(polarity1);
+  } else {
+    lcd.print(" NoMag");
+  }
+
   lcd.setCursor(0, 1);
-  lcd.print("MUX2 C11: ");
-  lcd.print(sensor2);
-  
-  delay(500);  // update every half second
+  lcd.print("S2: ");
+  lcd.print(voltage2, 2);
+  if (magnet2Present) {
+    lcd.print(" ");
+    lcd.print(polarity2);
+  } else {
+    lcd.print(" NoMag");
+  }
+  delay(1500); // Show sensor readings for 1.5 sec
+
+  // --- Display the custom chess pieces ---
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Pieces:");
+  lcd.setCursor(0, 1);
+  lcd.write(byte(0)); // Knight
+  lcd.write(byte(1)); // Rook
+  lcd.write(byte(2)); // Bishop
+  lcd.write(byte(3)); // Queen
+  delay(1300); // Show chess pieces for 3 sec
 }
-
-
-
-/*
-#include <Arduino.h>
-
-// Define multiplexer control pins
-#define S0 25  // D2 on FireBeetle ESP32
-#define S1 26  // D3 on FireBeetle ESP32
-#define S2 27  // D4 on FireBeetle ESP32 (not needed for C0-C3 but wired)
-#define S3 9   // D5 on FireBeetle ESP32 (not needed for C0-C3 but wired)
-#define SIG 10 // D6 on FireBeetle ESP32 - common signal output
-
-void setup() {
-    pinMode(S0, OUTPUT);
-    pinMode(S1, OUTPUT);
-    pinMode(S2, OUTPUT);
-    pinMode(S3, OUTPUT);
-    pinMode(SIG, OUTPUT);
-    
-    digitalWrite(SIG, LOW); // Ensure LEDs are off at start
-}
-
-void selectChannel(int channel) {
-    digitalWrite(S0, channel & 0x01);
-    digitalWrite(S1, channel & 0x02);
-    digitalWrite(S2, channel & 0x04);
-    digitalWrite(S3, channel & 0x08);
-}
-
-void loop() {
-    for (int i = 0; i < 16; i++) { // Cycle through C0-C3
-        selectChannel(i); 
-        digitalWrite(SIG, HIGH); // Turn on the selected LED
-        delay(10);
-        digitalWrite(SIG, LOW);  // Turn off the LED
-        delay(10);
-    }
-}
-*/

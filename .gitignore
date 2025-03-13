@@ -3,3 +3,7 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+build
+
+# Ignore build directory, .vscode directory, and all files in the .vscode directory
+
